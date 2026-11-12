@@ -9,6 +9,7 @@
       modules = [
         ./configuration.nix
         ./modules/worker.nix
+        ./modules/control-firewall.nix
       ];
     };
   };
