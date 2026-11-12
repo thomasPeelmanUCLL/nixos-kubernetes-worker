@@ -1,0 +1,7 @@
+/result
+/result-*
+/worker-enrollment/
+/secrets/
+*.secret
+*-key.pem
+id_isw
