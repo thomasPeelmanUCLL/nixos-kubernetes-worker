@@ -40,7 +40,7 @@ in
       address = node4;
       nodeIp = "${node4},${node6}";
       clusterDns = [ "10.96.0.10" ];
-      unschedulable = true;
+      unschedulable = false;
     };
 
     flannel = {
