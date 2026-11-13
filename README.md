@@ -26,4 +26,4 @@ sudo ./result/bin/switch-to-configuration dry-activate
 sudo nixos-rebuild switch --flake .#k8s-worker-1
 ```
 
-The flake imports configuration.nix, the machine's hardware configuration, modules/worker.nix, and modules/control-firewall.nix. Do not rebuild from the unrelated minimal /etc/nixos configuration. Secrets are not stored in Git. Lab configuration; reboot recovery and production hardening were not validated.
+The flake imports configuration.nix, the machine's hardware configuration, modules/worker.nix, modules/calico.nix, and modules/control-firewall.nix. Do not rebuild from the unrelated minimal /etc/nixos configuration. Secrets are not stored in Git. Lab configuration; reboot recovery and production hardening were not validated.
