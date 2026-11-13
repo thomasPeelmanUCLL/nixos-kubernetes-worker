@@ -1,0 +1,50 @@
+{ lib, pkgs, ... }:
+let
+  calicoVersion = "v3.30.2";
+in
+{
+  # The pinned NixOS Kubernetes module does not expose first-class Calico
+  # cluster deployment options, so this module declares the worker-side CNI
+  # state and writes pinned Calico node settings for controlled activation.
+  services.kubernetes.kubelet.cni.packages = lib.mkForce [
+    pkgs.cni-plugins
+    pkgs.calico-cni-plugin
+  ];
+
+  services.kubernetes.kubelet.cni.config = lib.mkForce [
+    {
+      cniVersion = "0.3.1";
+      name = "k8s-pod-network";
+      plugins = [
+        {
+          type = "calico";
+          datastore_type = "kubernetes";
+          policy.type = "k8s";
+          ipam.type = "calico-ipam";
+          kubernetes.kubeconfig = "/etc/cni/net.d/calico-kubeconfig";
+        }
+        {
+          type = "portmap";
+          snat = true;
+          capabilities.portMappings = true;
+        }
+      ];
+    }
+  ];
+
+  environment.etc."kubernetes/calico/node-settings-${calicoVersion}.yaml".text = ''
+    # Pinned node-side Calico settings for controlled activation from the control node.
+    calicoVersion: ${calicoVersion}
+    ipPools:
+      - cidr: 10.244.0.0/16
+        encapsulation: VXLAN
+        natOutgoing: Enabled
+    bgp: Disabled
+    nodeAddressAutodetectionV4:
+      interface: "ens3"
+  '';
+
+  systemd.tmpfiles.rules = [
+    "d /var/lib/kubelet/plugins_registry 0755 root root -"
+  ];
+}

@@ -41,7 +41,7 @@ Destination-side builds avoid the unsigned-store-path rejection encountered when
 
 For network-sensitive changes capture the resolved old /run/current-system, schedule its switch-to-configuration test with systemd-run --on-active=10m, then test-activate the new result. Verify a fresh workstation SSH connection and node health before cancelling the timer and persisting with nixos-rebuild switch. Rollback is best-effort; keep console recovery available.
 
-Compare `readlink -f /run/current-system` with `readlink -f /nix/var/nix/profiles/system` after switching. They should match. Check `systemctl is-active NetworkManager firewall containerd certmgr kubelet kube-proxy flannel` and `systemctl --failed`.
+Compare `readlink -f /run/current-system` with `readlink -f /nix/var/nix/profiles/system` after switching. They should match. Check `systemctl is-active NetworkManager firewall containerd certmgr kubelet kube-proxy` plus the currently selected CNI path (`flannel` before Calico cutover, Calico services/pods after cutover), then `systemctl --failed`.
 
 ## Scheduling and cluster verification
 

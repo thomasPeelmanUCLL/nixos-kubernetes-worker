@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, pkgs, ... }:
 let
   control4 = "10.1.1.237";
   node4 = "10.1.1.71";
@@ -16,8 +16,8 @@ in
   '';
 
   networking.networkmanager.unmanaged = [
-    "interface-name:flannel*"
-    "interface-name:mynet"
+    "interface-name:cali*"
+    "interface-name:vxlan.calico"
   ];
 
   boot.kernel.sysctl = {
@@ -43,24 +43,8 @@ in
       unschedulable = false;
     };
 
-    flannel = {
-      enable = true;
-      openFirewallPorts = false;
-    };
+    flannel.enable = false;
   };
-
-  services.flannel = {
-    iface = "ens3";
-    publicIp = node4;
-    network = lib.mkForce pods4;
-    extraNetworkConfig = {
-      EnableIPv4 = true;
-      EnableIPv6 = true;
-      IPv6Network = pods6;
-      IPv6SubnetLen = 64;
-    };
-  };
-  systemd.services.flannel.environment.FLANNELD_IP_MASQ = "true";
 
   # Keep secret contents outside Git and the Nix store. Fail bootstrap
   # rather than downloading a CA with certificate verification disabled.
