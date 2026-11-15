@@ -1,6 +1,14 @@
 { lib, pkgs, ... }:
 let
   calicoVersion = "v3.30.2";
+
+  # pkgs.calico-cni-plugin ships only `calico` and `install`. Calico selects
+  # its CNI/IPAM role from the name it is invoked as, so calico-ipam is a
+  # link to the calico binary (same layout as the upstream calico/cni image).
+  calicoIpam = pkgs.runCommand "calico-ipam-link" { } ''
+    mkdir -p $out/bin
+    ln -s ${pkgs.calico-cni-plugin}/bin/calico $out/bin/calico-ipam
+  '';
 in
 {
   # The pinned NixOS Kubernetes module does not expose first-class Calico
@@ -9,6 +17,7 @@ in
   services.kubernetes.kubelet.cni.packages = lib.mkForce [
     pkgs.cni-plugins
     pkgs.calico-cni-plugin
+    calicoIpam
   ];
 
   # Do not declare portmap here. The NixOS kubelet CNI module writes each
