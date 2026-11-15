@@ -1,29 +1,47 @@
 # Calico Deployment and Troubleshooting
 
-This guide documents how to deploy Calico on the NixOS Kubernetes cluster and how to recover from the two most common failures seen during setup.
+This guide documents how to deploy Calico on the NixOS Kubernetes cluster and how to recover from common failures seen during setup.
 
-## Prerequisites
+## Current status
 
-- Control node: `k8s-control-1` at `10.1.1.237`
-- Worker node: `k8s-worker-1` at `10.1.1.71`
+The cluster is running Calico successfully:
+
+- Control node: `k8s-control-1` at `10.1.1.237`, status `Ready`
+- Worker node: `k8s-worker-1` at `10.1.1.71`, status `Ready`
 - Kubernetes 1.36.3
-- Calico manifests pinned to `v3.30.2`
-- Calico CNI plugin package version `3.31.5` on the worker
+- Calico manifests and CNI plugin both pinned to `v3.30.2`
+- `calico-node` DaemonSet: 2/2 pods Running
+- `calico-kube-controllers`: 1/1 Running
+- `coredns`: 1/1 Running
+- Flannel is fully removed; `flannel.1` no longer exists
 
-## Worker CNI requirement
+## Worker CNI pinning
 
-The Nix package `calico-cni-plugin` ships only `calico` and `install`. It does not ship `calico-ipam`. The Calico CNI configuration requires `calico-ipam` in `/opt/cni/bin`.
+The worker pins the Calico CNI plugin to match the Calico manifest version (`v3.30.2`). This is done in `modules/calico.nix` with an `overrideAttrs` that sets both the source revision and the Go module hash:
 
-The worker's `modules/calico.nix` adds a `calicoIpam` package that links `calico-ipam` to `calico`:
+```nix
+calico-cni-plugin = pkgs.calico-cni-plugin.overrideAttrs (old: rec {
+  version = "3.30.2";
+  src = pkgs.fetchFromGitHub {
+    owner = "projectcalico";
+    repo = "calico";
+    rev = "v${version}";
+    hash = "sha256-UvHrCA/1n9dklcMY1AfNNW5/TtxVdmwmQb2DHEBFZhA=";
+  };
+  vendorHash = "sha256-Cp1Eo8Xa4c0o5l6/p+pyHa/t3jMUpgUDDXEAKwS6aCE=";
+});
+```
+
+Both `hash` (source tarball) and `vendorHash` (Go module dependencies) must match the pinned version. If either is wrong, Nix reports a hash mismatch during `nixos-rebuild build`.
+
+The `calicoIpam` derivation links `calico-ipam` to the `calico` binary, since the Nix package ships only `calico` and `install`:
 
 ```nix
 calicoIpam = pkgs.runCommand "calico-ipam-link" { } ''
   mkdir -p $out/bin
-  ln -s ${pkgs.calico-cni-plugin}/bin/calico $out/bin/calico-ipam
+  ln -s ${calico-cni-plugin}/bin/calico $out/bin/calico-ipam
 '';
 ```
-
-This package is added to `services.kubernetes.kubelet.cni.packages` so NixOS links it into `/opt/cni/bin` on every rebuild.
 
 Verify after a rebuild:
 
@@ -31,7 +49,30 @@ Verify after a rebuild:
 ls -l /opt/cni/bin/calico /opt/cni/bin/calico-ipam
 ```
 
-Both should be symlinks into the Nix store.
+## kubectl access
+
+The admin kubeconfig lives at `/etc/kubernetes/cluster-admin.kubeconfig`, not `admin.conf`. It references a client key at `/var/lib/kubernetes/secrets/cluster-admin-key.pem` that is root-owned with `600` permissions.
+
+Two ways to use kubectl:
+
+Run as root (no permission changes needed):
+
+```bash
+sudo KUBECONFIG=/etc/kubernetes/cluster-admin.kubeconfig kubectl get nodes
+sudo KUBECONFIG=/etc/kubernetes/cluster-admin.kubeconfig kubectl get pods -n kube-system
+```
+
+Or, for a lab environment, copy the kubeconfig and relax the key permission:
+
+```bash
+mkdir -p ~/.kube
+sudo cp /etc/kubernetes/cluster-admin.kubeconfig ~/.kube/config
+sudo chown $(id -u):$(id -g) ~/.kube/config
+sudo chmod 644 /var/lib/kubernetes/secrets/cluster-admin-key.pem
+kubectl get nodes
+```
+
+Note: relaxing the key permission to `644` is acceptable for a lab but not recommended for production. Prefer `sudo` or a scoped user kubeconfig instead.
 
 ## Firewall rules
 
@@ -49,7 +90,7 @@ Calico VXLAN requires UDP 4789 between nodes. The API server requires TCP 6443.
 
 ### Worker node
 
-`modules/control-firewall.nix` accepts the following from the control node on `ens3`:
+`modules/control-firewall.nix` accepts the following from the worker on `ens3`:
 
 - `10250/tcp` for kubelet
 - `4789/udp` for VXLAN
@@ -103,7 +144,6 @@ Then test connectivity:
 K="sudo kubectl --kubeconfig=/etc/kubernetes/cluster-admin.kubeconfig exec nettest --"
 $K ping -c2 -W2 10.1.1.71
 $K ping -c2 -W2 10.1.1.237
-$K ping -c2 -W2 10.244.206.194
 $K wget -T3 -qO- --no-check-certificate https://10.1.1.237:6443/version
 $K wget -T3 -qO- --no-check-certificate https://10.96.0.1:443/version
 ```
@@ -115,6 +155,22 @@ Clean up:
 ```bash
 sudo kubectl --kubeconfig=/etc/kubernetes/cluster-admin.kubeconfig delete pod nettest
 ```
+
+## Troubleshooting: hash mismatch during build
+
+Symptom:
+
+```text
+error: hash mismatch in fixed-output derivation
+```
+
+Cause:
+
+Either the source `hash` or the `vendorHash` in `modules/calico.nix` does not match the pinned Calico version.
+
+Fix:
+
+Nix prints the expected hash in the error output (`got: sha256-...`). Copy that value into the corresponding field (`hash` for the source tarball, `vendorHash` for Go modules) and rebuild.
 
 ## Troubleshooting: calico-ipam missing
 
@@ -164,20 +220,13 @@ Check that the service DNAT rule exists:
 sudo iptables-save -t nat | grep -A3 KUBE-SEP | grep 6443
 ```
 
-Check that the pod can reach the API server directly:
-
-```bash
-K="sudo kubectl --kubeconfig=/etc/kubernetes/cluster-admin.kubeconfig exec nettest --"
-$K wget -T3 -qO- --no-check-certificate https://10.1.1.237:6443/version
-```
-
-If the direct check works but the service IP fails, restart kube-proxy:
+If the direct node check works but the service IP fails, restart kube-proxy:
 
 ```bash
 sudo systemctl restart kube-proxy
 ```
 
-If the controller pod keeps crash-looping after kube-proxy is healthy, delete and recreate it. A stale conntrack entry or sandbox state from earlier failed starts can persist:
+If the controller pod keeps crash-looping after kube-proxy is healthy, delete and recreate it:
 
 ```bash
 sudo kubectl --kubeconfig=/etc/kubernetes/cluster-admin.kubeconfig \
@@ -187,5 +236,5 @@ sudo kubectl --kubeconfig=/etc/kubernetes/cluster-admin.kubeconfig \
 ## Notes
 
 - Flannel and Calico must not run at the same time. The control node's `calico-vxlan-clean` branch disables flannel with `mkForce`.
-- The worker's Calico CNI plugin version (3.31.5) may differ from the Calico manifest version (3.30.2). This is acceptable for a lab, but align them if you see CRD or API errors.
+- The worker's Calico CNI plugin is now pinned to 3.30.2, matching the Calico manifest version, via `overrideAttrs` with both `hash` and `vendorHash`.
 - The control node's `pod-api-access.nix` opens port 6443 on the `mynet` bridge, which is a Flannel-specific interface. It is not needed under Calico and can be removed once Flannel is fully gone.
