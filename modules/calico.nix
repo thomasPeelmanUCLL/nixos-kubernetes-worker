@@ -12,17 +12,24 @@ in
   ];
 
   services.kubernetes.kubelet.cni.config = lib.mkForce [
-  {
-    type = "calico";
-    cniVersion = "0.3.1";
-    name = "k8s-pod-network";
+    {
+      type = "calico";
+      cniVersion = "0.3.1";
+      name = "k8s-pod-network";
 
-    datastore_type = "kubernetes";
-    policy.type = "k8s";
-    ipam.type = "calico-ipam";
-    kubernetes.kubeconfig = "/etc/cni/net.d/calico-kubeconfig";
-  }
-];
+      log_level = "info";
+      datastore_type = "kubernetes";
+      policy.type = "k8s";
+      ipam.type = "calico-ipam";
+      kubernetes.kubeconfig = "/etc/cni/net.d/calico-kubeconfig";
+    }
+    {
+      type = "portmap";
+      cniVersion = "0.3.1";
+      capabilities.portMappings = true;
+      snat = true;
+    }
+  ];
 
   environment.etc."kubernetes/calico/node-settings-${calicoVersion}.yaml".text = ''
     # Pinned node-side Calico settings for controlled activation from the control node.
