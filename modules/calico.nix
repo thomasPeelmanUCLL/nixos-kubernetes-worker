@@ -11,6 +11,11 @@ in
     pkgs.calico-cni-plugin
   ];
 
+  # Do not declare portmap here. The NixOS kubelet CNI module writes each
+  # configured plugin as a separate CNI network file, and a standalone
+  # portmap configuration is invalid because it has no network name.
+  # Calico's install-cni init container installs the combined
+  # calico + portmap CNI configuration.
   services.kubernetes.kubelet.cni.config = lib.mkForce [
     {
       type = "calico";
@@ -22,12 +27,6 @@ in
       policy.type = "k8s";
       ipam.type = "calico-ipam";
       kubernetes.kubeconfig = "/etc/cni/net.d/calico-kubeconfig";
-    }
-    {
-      type = "portmap";
-      cniVersion = "0.3.1";
-      capabilities.portMappings = true;
-      snat = true;
     }
   ];
 
