@@ -13,6 +13,7 @@ let
       rev = "v${version}";
       hash = "sha256-UvHrCA/1n9dklcMY1AfNNW5/TtxVdmwmQb2DHEBFZhA=";
     };
+    vendorHash = "sha256-Cp1Eo8Xa4c0o5l6/p+pyHa/t3jMUpgUDDXEAKwS6aCE=";
   });
 
   # pkgs.calico-cni-plugin ships only `calico` and `install`. Calico selects
