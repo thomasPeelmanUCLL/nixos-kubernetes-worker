@@ -2,12 +2,25 @@
 let
   calicoVersion = "v3.30.2";
 
+  # Pin the Calico CNI plugin to match calicoVersion. nixpkgs may carry a
+  # newer calico-cni-plugin; overriding version keeps the CNI plugin, IPAM
+  # plugin, and Calico manifests on the same release line.
+  calico-cni-plugin = pkgs.calico-cni-plugin.overrideAttrs (old: rec {
+    version = "3.30.2";
+    src = pkgs.fetchFromGitHub {
+      owner = "projectcalico";
+      repo = "calico";
+      rev = "v${version}";
+      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    };
+  });
+
   # pkgs.calico-cni-plugin ships only `calico` and `install`. Calico selects
   # its CNI/IPAM role from the name it is invoked as, so calico-ipam is a
   # link to the calico binary (same layout as the upstream calico/cni image).
   calicoIpam = pkgs.runCommand "calico-ipam-link" { } ''
     mkdir -p $out/bin
-    ln -s ${pkgs.calico-cni-plugin}/bin/calico $out/bin/calico-ipam
+    ln -s ${calico-cni-plugin}/bin/calico $out/bin/calico-ipam
   '';
 in
 {
@@ -16,7 +29,7 @@ in
   # state and writes pinned Calico node settings for controlled activation.
   services.kubernetes.kubelet.cni.packages = lib.mkForce [
     pkgs.cni-plugins
-    pkgs.calico-cni-plugin
+    calico-cni-plugin
     calicoIpam
   ];
 
